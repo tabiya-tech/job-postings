@@ -1,0 +1,242 @@
+<!doctype html>
+<!--
+  Example client for the job-postings API.
+
+  It sends job postings, lists the ones you sent, and shows one of them. The API calls are the three functions at the
+  top of the <script> below (sendPostings, listPostings, getPosting): plain fetch calls you can copy into your own code.
+  Everything after them only connects those calls to this page.
+
+  Run it:
+    1. Start the API:              docker compose up -d
+    2. Serve this folder:          python3 -m http.server 8091 --directory examples
+    3. Open:                       http://localhost:8091/client.html
+    4. Paste an API key (create one with scripts/mint_api_key.py).
+
+  The browser only lets this page call the API because the API allows its origin (CORS_ALLOW_ORIGINS in
+  docker-compose.yml). A server-side client needs no such setting.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>job-postings example client</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #5d6677; --border: #d9dde5; --accent: #2457c5;
+          --ok: #1f7a3f; --bad: #b42318; --code: #eef1f5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #12151b; --panel: #1a1f27; --text: #e5e8ee; --muted: #9aa3b2; --border: #2e3541; --accent: #6d97ff;
+            --ok: #4cc27a; --bad: #ff7a6b; --code: #12151b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 16px 0; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 4px; }
+  p { margin: 4px 0 12px; color: var(--muted); }
+  code { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  input, textarea { display: block; width: 100%; margin-top: 4px; font: inherit; color: var(--text); background: var(--bg);
+                    border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; }
+  textarea, pre { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+  input[type=checkbox] { display: inline; width: auto; margin: 0 4px 0 12px; }
+  button { font: inherit; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--accent); cursor: pointer;
+           background: var(--accent); color: #fff; font-weight: 600; }
+  button.secondary { background: none; color: var(--accent); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  pre { background: var(--code); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin: 10px 0 0;
+        white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tbody tr { cursor: pointer; } tbody tr:hover { background: var(--code); }
+</style>
+</head>
+<body>
+<main>
+  <h1>job-postings example client</h1>
+  <p>Send job postings, then read them back. Open your browser's developer tools to see each request.</p>
+
+  <section>
+    <h2>Connection</h2>
+    <form onsubmit="return false">
+      <label>API URL <input id="apiUrl" value="http://localhost:8090"></label>
+      <label>API key, sent as the <code>x-api-key</code> header
+        <input id="apiKey" type="password" autocomplete="off" placeholder="from scripts/mint_api_key.py"></label>
+    </form>
+  </section>
+
+  <section>
+    <h2>1. Send postings: <code>POST /job-postings</code></h2>
+    <p>The body is an array of postings. <code>external_id</code> (your own ID for the posting),
+      <code>title</code>, <code>description</code> and <code>country</code> are required; the full list of fields is
+      at <code>/docs</code> on the API. Send the same <code>external_id</code> again to update a posting.</p>
+    <textarea id="postings" rows="14" spellcheck="false"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button id="sendButton">Send</button>
+      <span id="sendStatus"></span>
+    </div>
+    <pre id="sendResult" hidden></pre>
+  </section>
+
+  <section>
+    <h2>2. List your postings: <code>GET /job-postings</code></h2>
+    <p>Newest first. Optional filters, as a query string: <code>country</code>, <code>status</code>,
+      <code>stage</code>, <code>external_id</code>, <code>updated_since</code>, <code>limit</code>.</p>
+    <label>Filters <input id="filters" placeholder="country=kenya&amp;stage=queued"></label>
+    <div class="row">
+      <button id="listButton">List</button>
+      <button id="moreButton" class="secondary" hidden>Next page</button>
+      <span id="listStatus"></span>
+    </div>
+    <table>
+      <thead><tr><th>title</th><th>country</th><th>status</th><th>stage</th><th>external_id</th></tr></thead>
+      <tbody id="postingRows"></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>3. Read one posting: <code>GET /job-postings/{id}</code></h2>
+    <p>Click a posting in the list. <code>processing</code> shows each stage's status, attempts and last error.</p>
+    <div class="row">
+      Include:
+      <label style="margin:0"><input type="checkbox" id="includeClassification">classification</label>
+      <label style="margin:0"><input type="checkbox" id="includeRanking">ranking</label>
+    </div>
+    <pre id="posting">No posting selected.</pre>
+  </section>
+</main>
+
+<script>
+// ─── The API ──────────────────────────────────────────────────────────────────────────────────────────────────
+// Every call sends the API key in the x-api-key header. A key belongs to one source: you only see that source's
+// postings, and you may only post to the countries the key allows.
+
+/** POST /job-postings: send an array of postings. Returns one result per posting: created, updated, unchanged or
+ *  rejected (with the reason). A rejected posting does not stop the others. */
+async function sendPostings(apiUrl, apiKey, postings) {
+  const response = await fetch(`${apiUrl}/job-postings`, {
+    method: "POST",
+    headers: { "x-api-key": apiKey, "content-type": "application/json" },
+    body: JSON.stringify(postings),
+  });
+  return readJson(response); // { results: [{ index, id, external_id, status, error }] }
+}
+
+/** GET /job-postings: one page of your postings, newest first. Pass the page's `next` as `cursor` to get the
+ *  following page; `next` is null on the last one. */
+async function listPostings(apiUrl, apiKey, filters, cursor) {
+  const query = new URLSearchParams(filters);
+  if (cursor) query.set("cursor", cursor);
+  const response = await fetch(`${apiUrl}/job-postings?${query}`, { headers: { "x-api-key": apiKey } });
+  return readJson(response); // { items: [{ id, title, country, status, stage, ... }], next }
+}
+
+/** GET /job-postings/{id}: one posting as stored, with its processing. `include` can ask for what the stages
+ *  produced: "classification", "ranking" or both. */
+async function getPosting(apiUrl, apiKey, id, include) {
+  const query = include.length ? `?include=${include.join(",")}` : "";
+  const response = await fetch(`${apiUrl}/job-postings/${encodeURIComponent(id)}${query}`, {
+    headers: { "x-api-key": apiKey },
+  });
+  return readJson(response);
+}
+
+/** The JSON body of a response, or an error with the API's reason (401 bad key, 404 not yours, 422 invalid...). */
+async function readJson(response) {
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(`${response.status}: ${JSON.stringify(body?.detail ?? body)}`);
+  return body;
+}
+
+// ─── The page ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+const $ = (id) => document.getElementById(id);
+const connection = () => [$("apiUrl").value.trim().replace(/\/$/, ""), $("apiKey").value.trim()];
+const show = (element, text, ok) => { element.textContent = text; element.className = ok ? "ok" : "bad"; };
+
+// An example to start from: one posting with every commonly used field.
+$("postings").value = JSON.stringify([
+  {
+    external_id: "EXAMPLE-1",
+    title: "Electrician",
+    description: "Install and maintain electrical wiring in commercial buildings. Read plans and follow safety codes.",
+    country: "kenya",
+    employer: "Acme Ltd",
+    city: "Nairobi",
+    employment_type: "full_time",
+    closing_date: "2026-12-31",
+    application_url: "https://jobs.example.org/example-1",
+  },
+], null, 2);
+
+// Remember the key in this browser only, so it does not have to be pasted on every visit.
+try { $("apiKey").value = localStorage.getItem("jobPostingsApiKey") ?? ""; } catch { /* storage blocked */ }
+$("apiKey").addEventListener("change", () => {
+  try { localStorage.setItem("jobPostingsApiKey", $("apiKey").value.trim()); } catch { /* storage blocked */ }
+});
+
+// 1. Send
+$("sendButton").addEventListener("click", async () => {
+  try {
+    const postings = JSON.parse($("postings").value);
+    const { results } = await sendPostings(...connection(), postings);
+    const counts = results.map((result) => result.status).join(", ");
+    show($("sendStatus"), `Sent ${results.length}: ${counts}`, !results.some((result) => result.status === "rejected"));
+    $("sendResult").hidden = false;
+    $("sendResult").textContent = JSON.stringify(results, null, 2);
+    list();
+  } catch (error) {
+    show($("sendStatus"), error.message, false);
+  }
+});
+
+// 2. List
+let nextCursor = null;
+
+async function list(cursor) {
+  try {
+    const page = await listPostings(...connection(), $("filters").value.trim(), cursor);
+    if (!cursor) $("postingRows").replaceChildren();
+    for (const posting of page.items) {
+      const row = $("postingRows").insertRow();
+      for (const field of ["title", "country", "status", "stage", "external_id"]) {
+        row.insertCell().textContent = posting[field] ?? "";
+      }
+      row.addEventListener("click", () => read(posting.id));
+    }
+    nextCursor = page.next;
+    $("moreButton").hidden = !nextCursor;
+    show($("listStatus"), `${$("postingRows").rows.length} shown${nextCursor ? ", more on the next page" : ""}`, true);
+  } catch (error) {
+    show($("listStatus"), error.message, false);
+  }
+}
+
+$("listButton").addEventListener("click", () => list());
+$("moreButton").addEventListener("click", () => list(nextCursor));
+
+// 3. Read one
+let selectedId = null;
+
+async function read(id) {
+  selectedId = id;
+  const include = [];
+  if ($("includeClassification").checked) include.push("classification");
+  if ($("includeRanking").checked) include.push("ranking");
+  try {
+    const posting = await getPosting(...connection(), id, include);
+    $("posting").textContent = JSON.stringify(posting, null, 2);
+  } catch (error) {
+    $("posting").textContent = error.message;
+  }
+}
+
+for (const box of ["includeClassification", "includeRanking"]) {
+  $(box).addEventListener("change", () => selectedId && read(selectedId));
+}
+</script>
+</body>
+</html>

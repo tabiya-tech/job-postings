@@ -1,0 +1,9 @@
+.git
+.venv
+.env
+**/__pycache__
+**/*_test.py
+.pytest_cache
+plans
+**/conftest.py
+app/postings/test_support.py

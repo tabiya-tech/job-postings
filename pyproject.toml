@@ -1,0 +1,43 @@
+[project]
+name = "job-postings"
+version = "0.1.0"
+description = "Receives job postings over HTTP and moves each one through classification and ranking."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi (>=0.115,<1.0)",
+    "uvicorn (>=0.34,<1.0)",
+    "pymongo (>=4.13,<5.0)",
+    "pydantic (>=2.10,<3.0)",
+    "pydantic-settings (>=2.7,<3.0)",
+    "httpx (>=0.28,<1.0)",
+]
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3"
+pytest-asyncio = "^0.25"
+pymongo-inmemory = "^0.5"
+pylint = "^3.3"
+pylint-pydantic = "^0.3"
+
+[tool.pytest.ini_options]
+testpaths = ["app"]
+python_files = ["*_test.py"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.pylint.main]
+load-plugins = ["pylint_pydantic"]
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint."messages control"]
+disable = ["missing-module-docstring", "too-few-public-methods"]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

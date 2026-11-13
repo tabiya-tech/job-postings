@@ -1,0 +1,70 @@
+# Local development only: MongoDB, the API, one worker, and mock classifier and reranker (examples/mock_*.py).
+# To use the real services, set CLASSIFIER_URL and RERANKER_URL in .env and drop the mock services.
+# Start with `docker compose up --build`, then open http://localhost:8090/health
+# (or the port set in JOB_POSTINGS_PORT).
+
+services:
+  mongodb:
+    image: mongo:7.0
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build: .
+    image: job-postings:local
+    command: ["api"]
+    environment: &app-environment
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DATABASE_NAME: job_postings
+      LOG_LEVEL: INFO
+      CLASSIFIER_URL: ${CLASSIFIER_URL:-http://classifier:8000}
+      RERANKER_URL: ${RERANKER_URL:-http://reranker:8001}
+      # Mint keys with `python scripts/mint_api_key.py` and put the entries in API_KEYS in a .env file next to this one.
+      API_KEYS: ${API_KEYS:-{}}
+      COUNTRY_LANGUAGES: ${COUNTRY_LANGUAGES:-{}}
+      # Lets examples/client.html, served on port 8091, call the API from the browser (localhost and 127.0.0.1 are
+      # different origins to a browser).
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-["http://localhost:8091","http://127.0.0.1:8091"]}
+    ports:
+      - "${JOB_POSTINGS_PORT:-8090}:8080"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    image: job-postings:local
+    command: ["worker"]
+    environment: *app-environment
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      api:
+        condition: service_started
+      classifier:
+        condition: service_started
+      reranker:
+        condition: service_started
+    restart: unless-stopped
+
+  classifier:
+    image: python:3.12-slim
+    command: ["python", "/mock_classifier.py"]
+    volumes:
+      - ./examples/mock_classifier.py:/mock_classifier.py:ro
+    restart: unless-stopped
+
+  reranker:
+    image: python:3.12-slim
+    command: ["python", "/mock_reranker.py"]
+    volumes:
+      - ./examples/mock_reranker.py:/mock_reranker.py:ro
+    restart: unless-stopped
+
+volumes:
+  mongodb-data:

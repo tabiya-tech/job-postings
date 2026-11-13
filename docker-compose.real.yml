@@ -1,0 +1,44 @@
+# Local end-to-end with the REAL classifier and reranker instead of the mocks. Use it on top of the main file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.real.yml up -d --build
+#
+# Needs, next to this repository:
+#   ../tabiya-livelihoods-classifier  on `main`, with a .env (copy .env.example; the NER model is public, so no
+#                                     HF_TOKEN). Its compose runs it with TARGET_ENVIRONMENT_TYPE=local: no API key,
+#                                     no MongoDB lookup
+#   ../llm-reranker                   (https://github.com/tabiya-tech/llm-reranker) with a .env that sets an LLM key
+#                                     (GEMINI_API_KEY, or RERANKER_LLM_PROVIDER and that provider's key)
+# The classifier opens a MongoDB at startup (for its batch endpoints) even in local mode: set APPLICATION_MONGODB_URI and
+# MONGODB_DB_NAME in its .env to a throwaway database (until the classifier can run without one).
+# The first start downloads the models and takes a while. The mock classifier of the main file still starts but is
+# not used.
+
+include:
+  - path: ../tabiya-livelihoods-classifier/docker-compose.yml
+    env_file: ../tabiya-livelihoods-classifier/.env
+
+services:
+  worker:
+    environment:
+      CLASSIFIER_URL: http://classify:5001
+      RERANKER_URL: http://reranker:8001
+
+  # Replaces the mock of the same name.
+  reranker:
+    build:
+      context: ../llm-reranker
+    image: llm-reranker:local
+    platform: linux/amd64
+    entrypoint: ["python"]
+    command: ["-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8001"]
+    env_file: ../llm-reranker/.env
+    ports:
+      - "127.0.0.1:${RERANKER_PORT:-8001}:8001"
+    environment:
+      # The API does not use MongoDB for /rank, but its settings expect these.
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DATABASE: reranker_unused
+      # Its requirements leave google-genai unpinned (>=2.31.0), so a fresh build gets 3.x, which calls the Gemini API on
+      # `v1`, where JSON mode is not enabled (400). Tell the SDK to use `v1beta`. To report to the reranker's repo.
+      GOOGLE_GENAI_API_VERSION: v1beta
+    volumes: !reset []
