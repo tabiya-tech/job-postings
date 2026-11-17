@@ -82,12 +82,16 @@ classifier and the reranker, so postings go all the way through without the real
 **[getting-started guide](docs/getting-started/README.md)** has the full steps: creating an API key, sending a first
 posting, running with the real classifier and reranker, running without Docker, every setting, and troubleshooting.
 
-## Tests
+## Tests and checks
 
 ```bash
 poetry run pytest
-poetry run pylint app
+poetry run pylint app scripts/mint_api_key.py
+poetry run bandit -r app scripts/mint_api_key.py --exclude '*_test.py,app/conftest.py'
 ```
+
+The same three run on every pull request. Tests are named `<module>_test.py` and mark setup, action and checks with
+`# GIVEN`, `# WHEN` and `# THEN` comments.
 
 Tests start a throwaway MongoDB, downloaded on first use. Set `PYMONGOIM__USE_LOCAL_MONGOD=True` to use an installed
 `mongod` instead.

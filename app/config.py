@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # How long a MongoDB call waits for a reachable server before it fails (health check, startup).
     mongodb_server_selection_timeout_ms: int = 5000
 
-    api_host: str = "0.0.0.0"
+    api_host: str = "0.0.0.0"  # nosec B104 - the container must listen on all interfaces
     api_port: int = 8080
 
     # API keys by SHA-256 of the key, as JSON. `API_KEYS_FILE` points at a JSON file of the same shape; both are merged.

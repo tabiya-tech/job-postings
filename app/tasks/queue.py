@@ -56,7 +56,7 @@ async def enqueue(db: AsyncDatabase, job_id: str, stage: Stage, *, max_attempts:
                 "max_attempts": max_attempts,
                 "run_after": now,
                 "locked_until": None,
-                "lock_token": None,
+                "lock_token": None,  # nosec B105
                 "last_error": None,
                 "updated_at": now,
             },
@@ -128,7 +128,7 @@ async def complete(db: AsyncDatabase, task: Task, outcome: str | None = None) ->
                 "status": "done",
                 "outcome": outcome,
                 "locked_until": None,
-                "lock_token": None,
+                "lock_token": None,  # nosec B105
                 "last_error": None,
                 "updated_at": now,
             }
@@ -166,7 +166,9 @@ async def fail(  # pylint: disable=too-many-arguments
         update = {"$set": {"status": "pending", "run_after": now + timedelta(seconds=delay)}}
         if busy:
             update["$inc"] = {"attempts": -1}
-    update["$set"].update({"locked_until": None, "lock_token": None, "last_error": reason, "updated_at": now})
+    update["$set"].update(
+        {"locked_until": None, "lock_token": None, "last_error": reason, "updated_at": now}  # nosec B105
+    )
 
     result = await db[TASKS].update_one(
         {"job_id": task.job_id, "stage": task.stage, "lock_token": task.token}, update
