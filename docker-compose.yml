@@ -8,6 +8,10 @@ services:
     image: mongo:7.0
     volumes:
       - mongodb-data:/data/db
+    ports:
+      # For MongoDB Compass or mongosh on your machine. Bound to localhost; 27018 so it does not clash with a MongoDB
+      # you already run on 27017.
+      - "127.0.0.1:${MONGODB_PORT:-27018}:27017"
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
       interval: 5s

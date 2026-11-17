@@ -1,0 +1,35 @@
+# Use a MongoDB you already run (on your machine, or elsewhere) instead of the one in docker-compose.yml.
+# Use it on top of the main file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.external-mongo.yml up -d --build
+#
+# Set EXTERNAL_MONGODB_URI in .env. The containers reach a MongoDB on your own machine at host.docker.internal:
+#
+#   EXTERNAL_MONGODB_URI=mongodb://host.docker.internal:27017
+#
+# Needs Docker Compose 2.24 or later (`!reset`, `!override`). The bundled mongodb service stays defined but does not
+# start: it sits in a profile nothing enables.
+
+services:
+  mongodb:
+    profiles: ["bundled-mongodb"]
+
+  api:
+    depends_on: !reset {}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      MONGODB_URI: ${EXTERNAL_MONGODB_URI:?Set EXTERNAL_MONGODB_URI in .env}
+
+  worker:
+    depends_on: !override
+      api:
+        condition: service_started
+      classifier:
+        condition: service_started
+      reranker:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      MONGODB_URI: ${EXTERNAL_MONGODB_URI:?Set EXTERNAL_MONGODB_URI in .env}

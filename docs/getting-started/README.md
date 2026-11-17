@@ -1,5 +1,16 @@
 # Getting started: run job-postings on your own machine
 
+## What this repository is
+
+[Tabiya](https://www.tabiya.org/) is a nonprofit organization, spun out of the University of Oxford, that builds open-source digital public infrastructure for labor markets in low- and middle-income countries. Its components are modular, and an organization can adopt one without the others.
+
+job-postings is the entry point for vacancies. A source (a job board, a scraper, a partner's own database) sends it job postings. It stores them and runs each one through two other Tabiya components:
+
+- the [Livelihoods Classifier](https://github.com/tabiya-tech/tabiya-livelihoods-classifier), which reads a posting and returns the occupations and skills it mentions, linked to the [Inclusive Livelihoods Taxonomy](https://github.com/tabiya-tech/taxonomy-model-application) (Tabiya's reference taxonomy of occupations and skills, which includes informal and unpaid work);
+- the [LLM Reranker](https://github.com/tabiya-tech/llm-reranker), which checks those skills against the posting's text and grades each one as essential or optional.
+
+The classified and ranked postings stay in MongoDB, for the services that use them downstream. job-postings only receives, stores and moves postings. It does not show them to jobseekers and does not match anyone to them.
+
 This guide takes you from a fresh clone to postings flowing through the whole pipeline on your own computer or server: the API, the worker, MongoDB, and the classifier and reranker. There are two ways to run the last two:
 
 - **[Mock services](#run-with-mock-services)** (start here): small stand-ins for the classifier and the reranker. One command starts everything, nothing is downloaded and nothing costs money. Use it to try the API and to develop.
@@ -13,7 +24,7 @@ You will end up with:
 
 > **Scope.** This is a guide for dev environments, not a hardened production deployment. Tested on macOS (Apple silicon, Docker Desktop). If something fails, please open an issue.
 >
-> **Run it on a machine you trust.** The classifier and the reranker have no authentication in this setup (the classifier runs in local mode), and the classifier's compose file publishes its ports on every network interface of the host. Do not expose them to the internet or an untrusted network; the reranker's port is bound to `localhost`. The MongoDB of the compose file has no password and is not published. Only the job-postings API is meant to be reached by other machines, and it needs an API key.
+> **Run it on a machine you trust.** The classifier and the reranker have no authentication in this setup (the classifier runs in local mode), and the classifier's compose file publishes its ports on every network interface of the host. Do not expose them to the internet or an untrusted network; the reranker's port is bound to `localhost`. The MongoDB of the compose file has no password and is published only on `localhost` (port `27018`). Only the job-postings API is meant to be reached by other machines, and it needs an API key.
 
 ## The pieces
 
@@ -55,7 +66,7 @@ API_KEYS={"<sha256 of the key>": {"source": "my-scraper", "countries": ["kenya"]
 docker compose up -d --build
 ```
 
-The first start builds the image and pulls MongoDB, which takes a few minutes. It starts MongoDB, the API, one worker, and the two mock services. Check it:
+The first start builds the image and pulls MongoDB, which takes a few minutes. It starts MongoDB, the API, one worker, and the two mock services. If you already run a MongoDB, you can [use it instead](#use-a-mongodb-you-already-run). Check it:
 
 ```bash
 curl http://localhost:8090/health
@@ -169,13 +180,49 @@ To see what was stored, look at the collections with `mongosh`:
 docker compose exec mongodb mongosh job_postings --eval "db.ranked_jobs.findOne({}, {classifier_metadata: 1, llm_classified_skills: 1})"
 ```
 
+## Use a MongoDB you already run
+
+By default the compose file starts its own MongoDB 7.0, with a volume for the data. To use one you already have (a `mongod` on your machine, a container, a hosted cluster), add `docker-compose.external-mongo.yml`. It stops the bundled MongoDB from starting and points the API and the worker at yours.
+
+1. In `.env`, set `EXTERNAL_MONGODB_URI`. For a MongoDB running on your own machine, containers reach it at `host.docker.internal`:
+
+```bash
+EXTERNAL_MONGODB_URI=mongodb://host.docker.internal:27017
+```
+
+Use the full connection string for a MongoDB with a password or a hosted cluster. Do not change `MONGODB_URI` in `.env`: it is for [running without Docker](#run-without-docker).
+
+2. Start the stack with the extra file (Compose 2.24 or later):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.external-mongo.yml up -d --build
+```
+
+3. Check it: `curl http://localhost:8090/health` should return `{"status":"ok","mongodb":"ok"}`. The collections are created in the database named by `MONGODB_DATABASE_NAME` (`job_postings`). Open it in MongoDB Compass to see them.
+
+Notes:
+
+- Add `-f docker-compose.real.yml` as well to run the real classifier and reranker. The classifier opens a MongoDB at startup, so in its `.env` set `APPLICATION_MONGODB_URI` to the same URI ([step 2](#run-with-the-real-classifier-and-reranker)).
+- The `mongodb` commands elsewhere in this guide (`docker compose exec mongodb mongosh ...`) do not apply. Use your own `mongosh` or Compass.
+- The bundled MongoDB is version 7.0, the one this project is tested with.
+
+### Look at the data with MongoDB Compass
+
+The bundled MongoDB is published on `localhost:27018` (set `MONGODB_PORT` in `.env` to change it; the port differs from the usual `27017` so it does not clash with a MongoDB you already run). In [MongoDB Compass](https://www.mongodb.com/products/tools/compass), connect to:
+
+```text
+mongodb://localhost:27018
+```
+
+and open the `job_postings` database. (MongoDB Compass is MongoDB's database viewer. It has nothing to do with Tabiya's Compass.)
+
 ## Day to day
 
 | To | Do |
 |---|---|
 | See the logs | `docker compose logs -f worker` (or `api`, `classify`, `reranker`) |
 | Stop, keeping the data | `docker compose down` |
-| Wipe everything, including the database | `docker compose down -v` |
+| Wipe everything, including the bundled database | `docker compose down -v` (a MongoDB you run yourself is not touched) |
 | Change the API's port | `JOB_POSTINGS_PORT` in `.env` (default `8090`) |
 | Add or change a key | edit `API_KEYS` in `.env`, then `docker compose up -d` |
 | Run postings faster | raise `WORKER_CONCURRENCY`, or start more workers: `docker compose up -d --scale worker=3` |
