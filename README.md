@@ -1,8 +1,8 @@
 # job-postings
 
-The entry point of the job pipeline behind [Horizon](https://www.tabiya.org/), Tabiya's open-source job matching
-engine. The job-postings service is the single owner of job postings: it receives them, stores them, and moves each
-one through classification and reranking.
+The entry point of the job pipeline behind the [Tabiya Matching Engine](https://github.com/tabiya-tech/matching-engine),
+Tabiya's open-source job matching engine. The job-postings service is the single owner of job postings: it receives
+them, stores them, and moves each one through classification and reranking.
 
 > Status: early. The API and the worker work end to end, tested with the real classifier and reranker. See the
 > [getting-started guide](docs/getting-started/README.md) to run it.
